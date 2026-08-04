@@ -19,9 +19,16 @@ test("ships the simple Punch House list and its three designs", async () => {
   assert.match(page, /Open camera/);
   assert.match(page, /Choose photo/);
   assert.match(page, /MarkupEditor/);
+  assert.match(page, /EditItemDialog/);
+  assert.match(page, /deleteRoom/);
+  assert.match(page, /quickCamera/);
+  assert.match(page, /AddressEditor/);
+  assert.match(page, /Undo/);
+  assert.match(page, /"text"/);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "MEDIA"/);
   assert.match(schema, /idx_rooms_project_name/);
   assert.match(schema, /idx_photos_project_item/);
+  assert.match(schema, /projectSettings/);
   assert.doesNotMatch(page, /Verify repair|Contractor/);
 });

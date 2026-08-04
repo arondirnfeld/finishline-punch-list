@@ -20,6 +20,12 @@ export const photos = sqliteTable("photos", {
   index("idx_photos_project_item").on(table.projectId, table.itemId),
 ]);
 
+export const projectSettings = sqliteTable("project_settings", {
+  projectId: integer("project_id").primaryKey().default(1),
+  address: text("address").notNull().default("123 Maple Street"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const items = sqliteTable("items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: integer("project_id").notNull().default(1),

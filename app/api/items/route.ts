@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 
-type Bindings = { DB: D1Database };
-const db = () => (env as unknown as Bindings).DB;
+type Bindings = { DB: D1Database; MEDIA: R2Bucket };
+const bindings = () => env as unknown as Bindings;
+const db = () => bindings().DB;
 
 async function ready() {
   const d1 = db();
@@ -55,4 +56,17 @@ export async function PATCH(request: Request) {
     data.afterPhoto === undefined ? c.after_photo : data.afterPhoto, data.id
   ).first();
   return Response.json({ item: row(result as Record<string, unknown>) });
+}
+
+export async function DELETE(request: Request) {
+  await ready();
+  const id = Number(new URL(request.url).searchParams.get("id"));
+  if (!id) return Response.json({ error: "Item id is required" }, { status: 400 });
+  const keys = await db().prepare("SELECT object_key FROM photos WHERE item_id = ? AND project_id = 1").bind(id).all<{ object_key: string }>();
+  if (keys.results.length) await bindings().MEDIA.delete(keys.results.map((entry) => entry.object_key));
+  await db().batch([
+    db().prepare("DELETE FROM photos WHERE item_id = ? AND project_id = 1").bind(id),
+    db().prepare("DELETE FROM items WHERE id = ? AND project_id = 1").bind(id),
+  ]);
+  return Response.json({ deleted: true });
 }

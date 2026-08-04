@@ -6,6 +6,9 @@ A deliberately simple, paper-inspired house punch list.
 - Organize every line with a room tag.
 - Add new rooms whenever needed.
 - Attach multiple photos to any line, use the camera, and save marked-up copies.
+- Draw freehand, circles, arrows, or text, with undo and reset controls.
+- Edit or delete list lines, manage rooms, and rename the home address.
+- Use the quick camera while adding a new line to capture and mark up before saving.
 - Switch between Field Notes, Blueprint, and Clean Ledger designs.
 - Print the list like a traditional paper punch list.
 

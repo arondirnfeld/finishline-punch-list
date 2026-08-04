@@ -31,3 +31,13 @@ export async function POST(request: Request) {
   const room = await db().prepare("INSERT INTO rooms (name) VALUES (?) RETURNING id, name").bind(name).first();
   return Response.json({ room }, { status: 201 });
 }
+
+export async function DELETE(request: Request) {
+  await ready();
+  const name = new URL(request.url).searchParams.get("name")?.trim();
+  if (!name) return Response.json({ error: "Room name is required" }, { status: 400 });
+  const used = await db().prepare("SELECT COUNT(*) AS total FROM items WHERE project_id = 1 AND room = ?").bind(name).first<{ total: number }>();
+  if (used?.total) return Response.json({ error: `Move or delete the ${used.total} items in ${name} first.` }, { status: 409 });
+  await db().prepare("DELETE FROM rooms WHERE project_id = 1 AND name = ?").bind(name).run();
+  return Response.json({ deleted: true });
+}

@@ -34,6 +34,12 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photoItem, setPhotoItem] = useState<Item | null>(null);
+  const [editItem, setEditItem] = useState<Item | null>(null);
+  const [address, setAddress] = useState("123 Maple Street");
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [roomError, setRoomError] = useState("");
+  const [quickPhoto, setQuickPhoto] = useState<string | null>(null);
+  const quickCamera = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("punch-list-theme") as Theme | null;
@@ -44,7 +50,8 @@ export default function Home() {
       fetch("/api/items").then((response) => response.ok ? response.json() : null),
       fetch("/api/rooms").then((response) => response.ok ? response.json() : null),
       fetch("/api/photos").then((response) => response.ok ? response.json() : null),
-    ]).then(([itemData, roomData, photoData]) => {
+      fetch("/api/settings").then((response) => response.ok ? response.json() : null),
+    ]).then(([itemData, roomData, photoData, settingsData]) => {
       if (itemData?.items?.length) setItems(itemData.items);
       if (roomData?.rooms?.length) {
         const names = roomData.rooms.map((entry: { name: string }) => entry.name);
@@ -52,6 +59,7 @@ export default function Home() {
         setRoom(names[0]);
       }
       if (photoData?.photos) setPhotos(photoData.photos);
+      if (settingsData?.address) setAddress(settingsData.address);
     }).catch(() => undefined);
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -66,10 +74,9 @@ export default function Home() {
     setShowThemes(false);
   }
 
-  async function addTask(event: FormEvent) {
-    event.preventDefault();
+  async function createTask(photo?: Blob) {
     const title = task.trim();
-    if (!title) return;
+    if (!title) return null;
     const optimistic: Item = { id: Date.now(), room, title, status: "open" };
     setItems((current) => [...current, optimistic]);
     setTask("");
@@ -79,8 +86,22 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         setItems((current) => current.map((item) => item.id === optimistic.id ? data.item : item));
+        if (photo) await uploadPhoto(data.item.id, photo, `camera-${data.item.id}.jpg`);
+        return data.item as Item;
       }
     } finally { setSaving(false); }
+    return null;
+  }
+
+  async function addTask(event: FormEvent) {
+    event.preventDefault();
+    await createTask();
+  }
+
+  async function uploadPhoto(itemId: number, file: Blob, name: string) {
+    const body = new FormData(); body.append("file", file, name); body.append("itemId", String(itemId));
+    const response = await fetch("/api/photos", { method: "POST", body });
+    if (response.ok) { const data = await response.json(); setPhotos((current) => [...current, data.photo]); }
   }
 
   async function toggle(item: Item) {
@@ -101,6 +122,30 @@ export default function Home() {
     await fetch("/api/rooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
   }
 
+  async function updateLine(changes: Item) {
+    setItems((current) => current.map((item) => item.id === changes.id ? changes : item)); setEditItem(null); setSaving(true);
+    try { await fetch("/api/items", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(changes) }); } finally { setSaving(false); }
+  }
+
+  async function deleteLine(item: Item) {
+    if (!window.confirm(`Delete “${item.title}” and its photos?`)) return;
+    const response = await fetch(`/api/items?id=${item.id}`, { method: "DELETE" });
+    if (response.ok) { setItems((current) => current.filter((entry) => entry.id !== item.id)); setPhotos((current) => current.filter((photo) => photo.itemId !== item.id)); setEditItem(null); }
+  }
+
+  async function deleteRoom(name: string) {
+    setRoomError("");
+    const response = await fetch(`/api/rooms?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (response.ok) { setRooms((current) => current.filter((entry) => entry !== name)); if (filter === name) setFilter("All rooms"); if (room === name) setRoom(rooms.find((entry) => entry !== name) ?? ""); }
+    else { const data = await response.json(); setRoomError(data.error ?? "This room could not be deleted."); }
+  }
+
+  async function saveAddress(next: string) {
+    const value = next.trim(); if (!value) return;
+    setAddress(value); setEditingAddress(false);
+    await fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: value }) });
+  }
+
   return (
     <main className={`site theme-${theme}`}>
       <div className="ambient-house" aria-hidden="true"><i className="roof" /><i className="wall" /><i className="door" /><i className="chimney" /></div>
@@ -115,13 +160,15 @@ export default function Home() {
       <section className="page" id="top">
         <div className="paper-holes" aria-hidden="true"><i /><i /><i /></div>
         <header className="page-head">
-          <div><p className="kicker">123 Maple Street</p><h1>House punch list</h1><p className="date-line">Final walk-through · {items.length - completed} items remaining</p></div>
+          <div>{editingAddress ? <AddressEditor value={address} onCancel={() => setEditingAddress(false)} onSave={saveAddress} /> : <button className="kicker address-button" onClick={() => setEditingAddress(true)} title="Change address">{address} <span>✎</span></button>}<h1>House punch list</h1><p className="date-line">Final walk-through · {items.length - completed} items remaining</p></div>
           <div className="progress-stamp"><strong>{completed}/{items.length}</strong><span>complete</span></div>
         </header>
 
         <form className="quick-add" onSubmit={addTask}>
           <span className="add-mark">+</span>
           <input value={task} onChange={(event) => setTask(event.target.value)} placeholder="Write the next item…" aria-label="New punch-list item" />
+          <button type="button" className="quick-camera" disabled={!task.trim()} onClick={() => quickCamera.current?.click()} aria-label="Take a photo for this new item">▣</button>
+          <input ref={quickCamera} hidden type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) setQuickPhoto(URL.createObjectURL(file)); event.target.value = ""; }} />
           <select value={room} onChange={(event) => setRoom(event.target.value)} aria-label="Room for new item">{rooms.map((name) => <option key={name}>{name}</option>)}</select>
           <button type="submit" disabled={!task.trim()}>Add</button>
         </form>
@@ -130,17 +177,18 @@ export default function Home() {
           <div className="room-scroll">
             {["All rooms", ...rooms].map((name) => <button key={name} className={filter === name ? "active" : ""} onClick={() => setFilter(name)}>{name}<span>{name === "All rooms" ? items.length : items.filter((item) => item.room === name).length}</span></button>)}
           </div>
-          <button className="new-room-button" onClick={() => setShowRoomForm(true)}>+ Room</button>
+          <button className="new-room-button" onClick={() => { setRoomError(""); setShowRoomForm(true); }}>Manage rooms</button>
         </div>
 
         <section className="list-sheet" aria-label="Punch-list items">
-          <div className="list-heading"><span className="number-col">No.</span><span className="task-col">Item</span><span className="room-col">Room</span><span className="photo-col">Photo</span><span className="status-col">Done</span></div>
+          <div className="list-heading"><span className="number-col">No.</span><span className="task-col">Item</span><span className="room-col">Room</span><span className="photo-col">Photo</span><span className="status-col">Done</span><span className="action-col" /></div>
           {shownItems.map((item, index) => <div className={`list-row ${item.status === "completed" ? "is-done" : ""}`} key={item.id}>
             <span className="number-col">{String(index + 1).padStart(2, "0")}</span>
             <button className="task-col task-title" onClick={() => toggle(item)}>{item.title}</button>
             <span className="room-col"><button className="room-tag" onClick={() => setFilter(item.room)}>{item.room}</button></span>
             <span className="photo-col"><button className="photo-button" onClick={() => setPhotoItem(item)} aria-label={`Photos for ${item.title}`}><span>▣</span>{photos.filter((photo) => photo.itemId === item.id).length > 0 && <em>{photos.filter((photo) => photo.itemId === item.id).length}</em>}</button></span>
             <span className="status-col"><button className="check" onClick={() => toggle(item)} aria-label={`${item.status === "completed" ? "Reopen" : "Complete"} ${item.title}`}>{item.status === "completed" ? "✓" : ""}</button></span>
+            <span className="action-col"><button className="row-edit" onClick={() => setEditItem(item)} aria-label={`Edit ${item.title}`}>•••</button></span>
           </div>)}
           {!shownItems.length && <div className="empty-line">No items in this room yet.</div>}
           <button className="last-line" onClick={() => document.querySelector<HTMLInputElement>(".quick-add input")?.focus()}>+ Add another line</button>
@@ -149,10 +197,22 @@ export default function Home() {
         <footer className="paper-footer"><span>{saving ? "Saving…" : "All changes saved"}</span><button onClick={() => window.print()}>Print list</button></footer>
       </section>
 
-      {showRoomForm && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setShowRoomForm(false)}><form className="room-dialog" onSubmit={addRoom}><button type="button" className="close" onClick={() => setShowRoomForm(false)}>×</button><span className="dialog-house">⌂</span><h2>Add a room</h2><p>Give this part of the house a name.</p><input autoFocus value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="e.g. Guest Bedroom" /><div><button type="button" onClick={() => setShowRoomForm(false)}>Cancel</button><button type="submit" className="solid" disabled={!newRoom.trim()}>Add room</button></div></form></div>}
+      {showRoomForm && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setShowRoomForm(false)}><form className="room-dialog manage-rooms" onSubmit={addRoom}><button type="button" className="close" onClick={() => setShowRoomForm(false)}>×</button><span className="dialog-house">⌂</span><h2>Manage rooms</h2><p>Add a room, or remove an empty one.</p><div className="room-manager-list">{rooms.map((name) => <div key={name}><span>{name}<small>{items.filter((item) => item.room === name).length} items</small></span><button type="button" onClick={() => deleteRoom(name)} aria-label={`Delete ${name}`}>Delete</button></div>)}</div>{roomError && <div className="room-error">{roomError}</div>}<input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="New room name" /><div><button type="button" onClick={() => setShowRoomForm(false)}>Done</button><button type="submit" className="solid" disabled={!newRoom.trim()}>Add room</button></div></form></div>}
+      {editItem && <EditItemDialog item={editItem} rooms={rooms} onSave={updateLine} onDelete={deleteLine} onClose={() => setEditItem(null)} />}
       {photoItem && <PhotoGallery item={photoItem} photos={photos.filter((photo) => photo.itemId === photoItem.id)} onClose={() => setPhotoItem(null)} onAdded={(photo) => setPhotos((current) => [...current, photo])} />}
+      {quickPhoto && <div className="gallery-backdrop quick-markup"><header className="gallery-head"><button onClick={() => setQuickPhoto(null)}>×</button><div><span>New item · {room}</span><b>{task}</b></div><em>Mark up before adding</em></header><section className="gallery-stage"><MarkupEditor src={quickPhoto} onCancel={() => setQuickPhoto(null)} saveLabel="Add item" onSave={async (blob) => { setQuickPhoto(null); await createTask(blob); }} /></section></div>}
     </main>
   );
+}
+
+function AddressEditor({ value, onSave, onCancel }: { value: string; onSave: (value: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState(value);
+  return <form className="address-editor" onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => event.key === "Escape" && onCancel()} /><button type="submit">Save</button></form>;
+}
+
+function EditItemDialog({ item, rooms, onSave, onDelete, onClose }: { item: Item; rooms: string[]; onSave: (item: Item) => void; onDelete: (item: Item) => void; onClose: () => void }) {
+  const [title, setTitle] = useState(item.title); const [room, setRoom] = useState(item.room);
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="room-dialog edit-dialog" onSubmit={(event) => { event.preventDefault(); if (title.trim()) onSave({ ...item, title: title.trim(), room }); }}><button type="button" className="close" onClick={onClose}>×</button><h2>Edit line</h2><label>Item<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>Room<select value={room} onChange={(event) => setRoom(event.target.value)}>{rooms.map((name) => <option key={name}>{name}</option>)}</select></label><button type="button" className="delete-line" onClick={() => onDelete(item)}>Delete this line</button><div><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="solid">Save changes</button></div></form></div>;
 }
 
 function PhotoGallery({ item, photos, onClose, onAdded }: { item: Item; photos: Photo[]; onClose: () => void; onAdded: (photo: Photo) => void }) {
@@ -190,10 +250,12 @@ function PhotoGallery({ item, photos, onClose, onAdded }: { item: Item; photos: 
   </div>;
 }
 
-function MarkupEditor({ src, onCancel, onSave }: { src: string; onCancel: () => void; onSave: (blob: Blob) => void }) {
+function MarkupEditor({ src, onCancel, onSave, saveLabel = "Save copy" }: { src: string; onCancel: () => void; onSave: (blob: Blob) => void; saveLabel?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const drawing = useRef<{ x: number; y: number; snapshot: ImageData } | null>(null);
-  const [tool, setTool] = useState<"pen" | "circle" | "arrow">("circle");
+  const history = useRef<ImageData[]>([]);
+  const original = useRef<ImageData | null>(null);
+  const [tool, setTool] = useState<"pen" | "circle" | "arrow" | "text">("pen");
   const [color, setColor] = useState("#ef5945");
   const [ready, setReady] = useState(false);
 
@@ -205,7 +267,8 @@ function MarkupEditor({ src, onCancel, onSave }: { src: string; onCancel: () => 
       const scale = Math.min(1, 1600 / image.width);
       element.width = Math.round(image.width * scale);
       element.height = Math.round(image.height * scale);
-      element.getContext("2d")?.drawImage(image, 0, 0, element.width, element.height);
+      const context = element.getContext("2d")!; context.drawImage(image, 0, 0, element.width, element.height);
+      original.current = context.getImageData(0, 0, element.width, element.height); history.current = [];
       setReady(true);
     };
     image.src = src;
@@ -218,18 +281,27 @@ function MarkupEditor({ src, onCancel, onSave }: { src: string; onCancel: () => 
   function start(event: React.PointerEvent) {
     if (!canvas.current || !ready) return;
     const point = coordinates(event); const context = canvas.current.getContext("2d")!;
+    history.current.push(context.getImageData(0, 0, canvas.current.width, canvas.current.height));
+    if (tool === "text") {
+      const label = window.prompt("Text to place on the photo:");
+      if (!label) { history.current.pop(); return; }
+      context.fillStyle = color; context.font = `700 ${Math.max(26, canvas.current.width / 24)}px Arial`; context.textBaseline = "top"; context.fillText(label, point.x, point.y);
+      return;
+    }
     drawing.current = { ...point, snapshot: context.getImageData(0, 0, canvas.current.width, canvas.current.height) };
     canvas.current.setPointerCapture(event.pointerId);
   }
   function draw(event: React.PointerEvent) {
     if (!drawing.current || !canvas.current) return;
     const point = coordinates(event); const context = canvas.current.getContext("2d")!; const start = drawing.current;
-    context.putImageData(start.snapshot, 0, 0); context.strokeStyle = color; context.fillStyle = color; context.lineWidth = Math.max(5, canvas.current.width / 170); context.lineCap = "round";
-    if (tool === "circle") { context.beginPath(); context.ellipse((start.x + point.x) / 2, (start.y + point.y) / 2, Math.abs(point.x - start.x) / 2, Math.abs(point.y - start.y) / 2, 0, 0, Math.PI * 2); context.stroke(); }
-    else if (tool === "arrow") { context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); const angle = Math.atan2(point.y - start.y, point.x - start.x); const head = Math.max(22, canvas.current.width / 45); context.beginPath(); context.moveTo(point.x, point.y); context.lineTo(point.x - head * Math.cos(angle - Math.PI / 6), point.y - head * Math.sin(angle - Math.PI / 6)); context.lineTo(point.x - head * Math.cos(angle + Math.PI / 6), point.y - head * Math.sin(angle + Math.PI / 6)); context.closePath(); context.fill(); }
-    else { context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); drawing.current = { ...point, snapshot: context.getImageData(0, 0, canvas.current.width, canvas.current.height) }; }
+    context.strokeStyle = color; context.fillStyle = color; context.lineWidth = Math.max(5, canvas.current.width / 170); context.lineCap = "round";
+    if (tool === "circle") { context.putImageData(start.snapshot, 0, 0); context.beginPath(); context.ellipse((start.x + point.x) / 2, (start.y + point.y) / 2, Math.abs(point.x - start.x) / 2, Math.abs(point.y - start.y) / 2, 0, 0, Math.PI * 2); context.stroke(); }
+    else if (tool === "arrow") { context.putImageData(start.snapshot, 0, 0); context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); const angle = Math.atan2(point.y - start.y, point.x - start.x); const head = Math.max(22, canvas.current.width / 45); context.beginPath(); context.moveTo(point.x, point.y); context.lineTo(point.x - head * Math.cos(angle - Math.PI / 6), point.y - head * Math.sin(angle - Math.PI / 6)); context.lineTo(point.x - head * Math.cos(angle + Math.PI / 6), point.y - head * Math.sin(angle + Math.PI / 6)); context.closePath(); context.fill(); }
+    else if (tool === "pen") { context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); drawing.current = { ...point, snapshot: start.snapshot }; }
   }
+  function undo() { const previous = history.current.pop(); if (previous && canvas.current) canvas.current.getContext("2d")?.putImageData(previous, 0, 0); }
+  function reset() { if (original.current && canvas.current) { canvas.current.getContext("2d")?.putImageData(original.current, 0, 0); history.current = []; } }
   function save() { canvas.current?.toBlob((blob) => blob && onSave(blob), "image/jpeg", .92); }
 
-  return <div className="markup"><canvas ref={canvas} onPointerDown={start} onPointerMove={draw} onPointerUp={() => drawing.current = null} /><div className="markup-bar"><button onClick={onCancel}>Cancel</button><div>{(["pen", "circle", "arrow"] as const).map((entry) => <button key={entry} className={tool === entry ? "active" : ""} onClick={() => setTool(entry)}><span>{entry === "pen" ? "✎" : entry === "circle" ? "○" : "↗"}</span>{entry}</button>)}<label><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><i style={{ background: color }} />Color</label></div><button className="save-markup" onClick={save} disabled={!ready}>Save copy</button></div></div>;
+  return <div className="markup"><canvas ref={canvas} onPointerDown={start} onPointerMove={draw} onPointerUp={() => drawing.current = null} /><div className="markup-bar"><div className="markup-left"><button onClick={onCancel}>Cancel</button><button onClick={undo}>↶ Undo</button><button onClick={reset}>Reset</button></div><div>{(["pen", "circle", "arrow", "text"] as const).map((entry) => <button key={entry} className={tool === entry ? "active" : ""} onClick={() => setTool(entry)}><span>{entry === "pen" ? "✎" : entry === "circle" ? "○" : entry === "arrow" ? "↗" : "T"}</span>{entry}</button>)}<label><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><i style={{ background: color }} />Color</label></div><button className="save-markup" onClick={save} disabled={!ready}>{saveLabel}</button></div></div>;
 }
