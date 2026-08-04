@@ -13,6 +13,7 @@ export function buildPunchListPdf(address: string, items: ReportItem[], photos: 
   const ink: [number, number, number] = [38, 52, 46];
   const muted: [number, number, number] = [103, 116, 109];
   const rule: [number, number, number] = [205, 212, 208];
+  const completedMark: [number, number, number] = [156, 61, 51];
   const completed = items.filter((item) => item.status === "completed").length;
   let pageNumber = 1;
   let y = 0;
@@ -42,7 +43,14 @@ export function buildPunchListPdf(address: string, items: ReportItem[], photos: 
     if (y + rowHeight > pageHeight - bottom) { footer(); doc.addPage(); pageNumber += 1; header(); }
     doc.setTextColor(...muted); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(String(index + 1).padStart(2, "0"), margin, y + 11);
     doc.setTextColor(...ink); doc.setFont("helvetica", item.status === "completed" ? "normal" : "normal"); doc.setFontSize(10); doc.text(lines, margin + 35, y + 11);
-    if (item.status === "completed") { const width = Math.min(295, doc.getTextWidth(lines[0])); doc.setDrawColor(...muted); doc.line(margin + 35, y + 7, margin + 35 + width, y + 7); }
+    if (item.status === "completed") {
+      doc.setDrawColor(...completedMark); doc.setLineWidth(1.25);
+      lines.forEach((line, lineIndex) => {
+        const width = Math.min(295, doc.getTextWidth(line));
+        const strikeY = y + 7 + lineIndex * 13;
+        doc.line(margin + 35, strikeY, margin + 35 + width, strikeY);
+      });
+    }
     doc.setTextColor(...green); doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.text(item.room.toUpperCase(), 395, y + 11, { maxWidth: 105 });
     doc.text(item.status === "completed" ? "DONE" : "OPEN", 510, y + 11);
     if (itemPhotos.length) {

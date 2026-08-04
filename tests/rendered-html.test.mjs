@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("ships the simple Punch House list and its three designs", async () => {
-  const [page, layout, hosting, schema, report] = await Promise.all([
+  const [page, layout, hosting, schema, report, css] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/report-pdf.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(layout, /Punch House/);
   assert.match(layout, /width: "device-width"/);
@@ -37,6 +38,9 @@ test("ships the simple Punch House list and its three designs", async () => {
   assert.match(page, /Download PDF/);
   assert.match(report, /textWithLink/);
   assert.match(report, /new URL\(photo.url, origin\)/);
+  assert.match(report, /lines\.forEach\(\(line, lineIndex\)/);
+  assert.match(report, /setLineWidth\(1\.25\)/);
+  assert.match(css, /text-decoration-thickness:2px/);
   assert.doesNotMatch(page, /window\.print/);
   assert.doesNotMatch(page, /Verify repair|Contractor/);
 });

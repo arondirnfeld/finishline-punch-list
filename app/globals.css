@@ -30,3 +30,6 @@
 .theme-notes .page{background-image:linear-gradient(90deg,transparent 0 35px,#d9828266 36px,#d9828266 37px,transparent 38px),repeating-linear-gradient(transparent 0 39px,#b9c8d455 40px)}
 @media(max-width:700px){.theme-notes .page{background-image:repeating-linear-gradient(transparent 0 39px,#b9c8d455 40px)}}
 @media (min-width:701px) and (max-width:1100px){.theme-notes .page{background-image:linear-gradient(90deg,transparent 0 23px,#d9828266 24px,#d9828266 25px,transparent 26px),repeating-linear-gradient(transparent 0 47px,#b9c8d455 48px)}}
+
+/* Completed work stays readable, with a deliberately bold strike-through. */
+.list-row.is-done .task-title{color:var(--ink);opacity:.72;text-decoration-line:line-through;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-decoration-skip-ink:none}
