@@ -1,22 +1,11 @@
-# FinishLine
+# Punch House
 
-A mobile-first shared punch list for the final details of a home project.
+A deliberately simple, paper-inspired house punch list.
 
-## What it does
+- Add one-line items and check them off.
+- Organize every line with a room tag.
+- Add new rooms whenever needed.
+- Switch between Field Notes, Blueprint, and Clean Ledger designs.
+- Print the list like a traditional paper punch list.
 
-- Captures issues by room with notes and camera-ready photo uploads.
-- Adds circles, arrows, and freehand markup directly to photos.
-- Tracks open, in-progress, completed, and owner-verified repairs.
-- Keeps before and after photos attached to the same item.
-- Shares the live project and prints a clean PDF report.
-
-Issue data is stored in D1 and photo files are stored in R2.
-
-## Local development
-
-```bash
-npm install
-npm run dev
-```
-
-Run `npm test` for the production build and product-surface checks.
+Issue and room data are stored in D1. The selected visual design is a device-local preference.

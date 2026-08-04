@@ -6,8 +6,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "FinishLine — House Punch List",
-  description: "Capture, share, repair, and verify every final detail in your home.",
+  title: "Punch House — Simple House Punch List",
+  description: "A simple paper-inspired punch list, organized by room.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 

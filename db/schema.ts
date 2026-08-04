@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+export const rooms = sqliteTable("rooms", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id").notNull().default(1),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_rooms_project_name").on(table.projectId, table.name),
+]);
+
 export const items = sqliteTable("items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: integer("project_id").notNull().default(1),
