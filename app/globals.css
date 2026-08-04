@@ -33,3 +33,17 @@
 
 /* Completed work stays readable, with a deliberately bold strike-through. */
 .list-row.is-done .task-title{color:var(--ink);opacity:.72;text-decoration-line:line-through;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-decoration-skip-ink:none}
+
+/* Keep photo markup controls inside the visible mobile viewport after the full-size image loads. */
+.gallery-backdrop{height:100dvh;max-height:100dvh;overflow:hidden}
+.gallery-backdrop:has(.gallery-stage .markup){grid-template-rows:68px minmax(0,1fr)}
+.gallery-stage,.markup{min-width:0;min-height:0}
+.markup{grid-template-rows:minmax(0,1fr) auto;overflow:hidden}
+.markup>canvas{min-width:0;min-height:0;width:auto;height:auto}
+.markup-bar{min-width:0;flex:0 0 auto;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+.markup-bar>div:nth-child(2){min-width:0}
+@media(max-width:700px){
+  .gallery-backdrop:has(.gallery-stage .markup),.quick-markup{grid-template-rows:60px minmax(0,1fr)}
+  .markup-bar{min-height:72px;height:auto;overflow:hidden;padding-bottom:max(6px,env(safe-area-inset-bottom))}
+  .markup-bar>div:nth-child(2){overflow-x:auto;overscroll-behavior-x:contain}
+}

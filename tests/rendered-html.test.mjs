@@ -41,6 +41,9 @@ test("ships the simple Punch House list and its three designs", async () => {
   assert.match(report, /lines\.forEach\(\(line, lineIndex\)/);
   assert.match(report, /setLineWidth\(1\.25\)/);
   assert.match(css, /text-decoration-thickness:2px/);
+  assert.match(css, /height:100dvh/);
+  assert.match(css, /grid-template-rows:minmax\(0,1fr\) auto/);
+  assert.match(css, /safe-area-inset-bottom/);
   assert.doesNotMatch(page, /window\.print/);
   assert.doesNotMatch(page, /Verify repair|Contractor/);
 });
