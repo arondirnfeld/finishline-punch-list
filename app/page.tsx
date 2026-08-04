@@ -184,7 +184,7 @@ export default function Home() {
           <div className="list-heading"><span className="number-col">No.</span><span className="task-col">Item</span><span className="room-col">Room</span><span className="photo-col">Photo</span><span className="status-col">Done</span><span className="action-col" /></div>
           {shownItems.map((item, index) => <div className={`list-row ${item.status === "completed" ? "is-done" : ""}`} key={item.id}>
             <span className="number-col">{String(index + 1).padStart(2, "0")}</span>
-            <button className="task-col task-title" onClick={() => toggle(item)}>{item.title}</button>
+            <div className="task-col task-cell"><button className="task-title" onClick={() => toggle(item)}>{item.title}</button>{photos.some((photo) => photo.itemId === item.id) && <span className="print-photo-links">Photos: {photos.filter((photo) => photo.itemId === item.id).map((photo, photoIndex) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer">Photo {photoIndex + 1}</a>)}</span>}</div>
             <span className="room-col"><button className="room-tag" onClick={() => setFilter(item.room)}>{item.room}</button></span>
             <span className="photo-col"><button className="photo-button" onClick={() => setPhotoItem(item)} aria-label={`Photos for ${item.title}`}><span>▣</span>{photos.filter((photo) => photo.itemId === item.id).length > 0 && <em>{photos.filter((photo) => photo.itemId === item.id).length}</em>}</button></span>
             <span className="status-col"><button className="check" onClick={() => toggle(item)} aria-label={`${item.status === "completed" ? "Reopen" : "Complete"} ${item.title}`}>{item.status === "completed" ? "✓" : ""}</button></span>
