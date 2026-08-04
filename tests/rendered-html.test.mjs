@@ -10,6 +10,7 @@ test("ships the simple Punch House list and its three designs", async () => {
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
   ]);
   assert.match(layout, /Punch House/);
+  assert.match(layout, /width: "device-width"/);
   assert.match(page, /House punch list/);
   assert.match(page, /Field notes/);
   assert.match(page, /Blueprint/);
