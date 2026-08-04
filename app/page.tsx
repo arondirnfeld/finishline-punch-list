@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { downloadPunchListPdf } from "./report-pdf";
 
 type Theme = "notes" | "blueprint" | "ledger";
 type Item = { id: number; room: string; title: string; status: "open" | "in_progress" | "completed" };
@@ -194,7 +195,7 @@ export default function Home() {
           <button className="last-line" onClick={() => document.querySelector<HTMLInputElement>(".quick-add input")?.focus()}>+ Add another line</button>
         </section>
 
-        <footer className="paper-footer"><span>{saving ? "Saving…" : "All changes saved"}</span><button onClick={() => window.print()}>Print list</button></footer>
+        <footer className="paper-footer"><span>{saving ? "Saving…" : "All changes saved"}</span><button onClick={() => downloadPunchListPdf(address, items, photos)}>Download PDF</button></footer>
       </section>
 
       {showRoomForm && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setShowRoomForm(false)}><form className="room-dialog manage-rooms" onSubmit={addRoom}><button type="button" className="close" onClick={() => setShowRoomForm(false)}>×</button><span className="dialog-house">⌂</span><h2>Manage rooms</h2><p>Add a room, or remove an empty one.</p><div className="room-manager-list">{rooms.map((name) => <div key={name}><span>{name}<small>{items.filter((item) => item.room === name).length} items</small></span><button type="button" onClick={() => deleteRoom(name)} aria-label={`Delete ${name}`}>Delete</button></div>)}</div>{roomError && <div className="room-error">{roomError}</div>}<input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="New room name" /><div><button type="button" onClick={() => setShowRoomForm(false)}>Done</button><button type="submit" className="solid" disabled={!newRoom.trim()}>Add room</button></div></form></div>}
