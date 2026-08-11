@@ -53,3 +53,18 @@
   .markup-bar{min-height:72px;height:auto;overflow:hidden;padding-bottom:max(6px,env(safe-area-inset-bottom))}
   .markup-bar>div:nth-child(2){overflow-x:auto;overscroll-behavior-x:contain}
 }
+
+/* Persistent line ordering and room-removal handoff. */
+.list-heading,.list-row{grid-template-columns:52px 1fr 140px 50px 48px 64px}
+.action-col{display:flex;align-items:center;justify-content:flex-end;gap:2px}
+.drag-line,.row-edit{border:0;background:transparent;color:var(--muted);padding:8px 3px}
+.drag-line{font-size:16px;line-height:1;cursor:grab;opacity:.45;touch-action:none}
+.drag-line:active{cursor:grabbing}.list-row:hover .drag-line,.drag-line:focus-visible{opacity:1}
+.list-row.is-reorder-target{box-shadow:inset 0 2px 0 var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.room-remove-confirm{display:block!important;text-align:left;background:#f4f7f5;border:1px solid #d9e2dd;border-radius:9px;padding:12px;margin:0 0 13px}
+.room-remove-confirm strong{display:block;font-size:12px;margin-bottom:3px}.room-remove-confirm p{margin:0 0 9px;font-size:9px}
+.room-remove-confirm select{width:100%;border:1px solid #cfd6d1;border-radius:7px;background:#fff;padding:9px;margin-bottom:9px}
+.room-remove-confirm>div{display:flex;justify-content:flex-end;gap:7px}.room-remove-confirm button{border:1px solid #d6ddd8;background:#fff;border-radius:7px;padding:8px 10px;font-size:9px;font-weight:750}.room-remove-confirm button.solid{background:#227050;color:#fff;border-color:#227050}
+@media (min-width:701px) and (max-width:1100px){.list-heading,.list-row{grid-template-columns:44px 1fr 130px 52px 48px 64px}}
+@media(max-width:700px){.list-heading,.list-row{grid-template-columns:25px 1fr 58px 32px 30px 50px}.drag-line{font-size:14px}.row-edit{font-size:9px}}
+@media print{.action-col{display:none!important}.list-heading,.list-row{grid-template-columns:52px 1fr 150px 54px}}

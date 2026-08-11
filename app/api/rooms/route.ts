@@ -10,7 +10,9 @@ async function ready() {
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_rooms_project_name ON rooms(project_id, name)"),
   ]);
   const count = await d1.prepare("SELECT COUNT(*) AS total FROM rooms WHERE project_id = 1").first<{ total: number }>();
-  if (!count?.total) {
+  await d1.prepare("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)").run();
+  const seedMarker = await d1.prepare("INSERT OR IGNORE INTO app_metadata (key, value) VALUES ('starter_rooms_seeded', CURRENT_TIMESTAMP)").run();
+  if (seedMarker.meta.changes > 0 && !count?.total) {
     await d1.batch(["Kitchen", "Living Room", "Primary Bedroom", "Bathroom", "Basement", "Exterior"].map((name) => d1.prepare("INSERT INTO rooms (name) VALUES (?)").bind(name)));
   }
 }
@@ -34,10 +36,23 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   await ready();
-  const name = new URL(request.url).searchParams.get("name")?.trim();
+  const url = new URL(request.url);
+  const name = url.searchParams.get("name")?.trim();
+  const moveTo = url.searchParams.get("moveTo")?.trim();
   if (!name) return Response.json({ error: "Room name is required" }, { status: 400 });
+  const roomCount = await db().prepare("SELECT COUNT(*) AS total FROM rooms WHERE project_id = 1").first<{ total: number }>();
+  if ((roomCount?.total ?? 0) <= 1) return Response.json({ error: "Add another room before removing this one." }, { status: 409 });
   const used = await db().prepare("SELECT COUNT(*) AS total FROM items WHERE project_id = 1 AND room = ?").bind(name).first<{ total: number }>();
-  if (used?.total) return Response.json({ error: `Move or delete the ${used.total} items in ${name} first.` }, { status: 409 });
-  await db().prepare("DELETE FROM rooms WHERE project_id = 1 AND name = ?").bind(name).run();
+  if (used?.total && (!moveTo || moveTo.toLowerCase() === name.toLowerCase())) return Response.json({ error: `Choose a room for the ${used.total} lines currently in ${name}.` }, { status: 409 });
+  if (used?.total) {
+    const destination = await db().prepare("SELECT name FROM rooms WHERE project_id = 1 AND lower(name) = lower(?)").bind(moveTo).first<{ name: string }>();
+    if (!destination) return Response.json({ error: "The destination room was not found." }, { status: 400 });
+    await db().batch([
+      db().prepare("UPDATE items SET room = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = 1 AND room = ?").bind(destination.name, name),
+      db().prepare("DELETE FROM rooms WHERE project_id = 1 AND name = ?").bind(name),
+    ]);
+  } else {
+    await db().prepare("DELETE FROM rooms WHERE project_id = 1 AND name = ?").bind(name).run();
+  }
   return Response.json({ deleted: true });
 }

@@ -43,6 +43,13 @@
       "when": 1786456301467,
       "tag": "0005_lean_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786457460068,
+      "tag": "0006_elite_ozymandias",
+      "breakpoints": true
     }
   ]
 }

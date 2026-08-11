@@ -39,6 +39,7 @@ export const items = sqliteTable("items", {
   notes: text("notes").notNull().default(""),
   status: text("status", { enum: ["open", "in_progress", "completed"] }).notNull().default("open"),
   verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
   beforePhoto: text("before_photo"),
   afterPhoto: text("after_photo"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

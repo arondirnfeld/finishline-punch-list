@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { downloadPunchListPdf } from "./report-pdf";
 
 type Theme = "notes" | "blueprint" | "ledger";
-type Item = { id: number; room: string; title: string; status: "open" | "in_progress" | "completed" };
+type Item = { id: number; room: string; title: string; status: "open" | "in_progress" | "completed"; sortOrder?: number };
 type Photo = { id: number; itemId: number; url: string; createdAt: string };
 
 const starterItems: Item[] = [
@@ -39,9 +39,13 @@ export default function Home() {
   const [address, setAddress] = useState("123 Maple Street");
   const [editingAddress, setEditingAddress] = useState(false);
   const [roomError, setRoomError] = useState("");
+  const [roomToRemove, setRoomToRemove] = useState<string | null>(null);
+  const [moveRoom, setMoveRoom] = useState("");
   const [quickPhoto, setQuickPhoto] = useState<string | null>(null);
   const [droppedPhoto, setDroppedPhoto] = useState<{ item: Item; src: string } | null>(null);
   const [dragItemId, setDragItemId] = useState<number | null>(null);
+  const [draggingLineId, setDraggingLineId] = useState<number | null>(null);
+  const [reorderTargetId, setReorderTargetId] = useState<number | null>(null);
   const quickCamera = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -152,11 +156,67 @@ export default function Home() {
     if (response.ok) { setItems((current) => current.filter((entry) => entry.id !== item.id)); setPhotos((current) => current.filter((photo) => photo.itemId !== item.id)); setEditItem(null); }
   }
 
-  async function deleteRoom(name: string) {
+  function requestDeleteRoom(name: string) {
     setRoomError("");
-    const response = await fetch(`/api/rooms?name=${encodeURIComponent(name)}`, { method: "DELETE" });
-    if (response.ok) { setRooms((current) => current.filter((entry) => entry !== name)); if (filter === name) setFilter("All rooms"); if (room === name) setRoom(rooms.find((entry) => entry !== name) ?? ""); }
+    const itemCount = items.filter((item) => item.room === name).length;
+    if (rooms.length <= 1) { setRoomError("Add another room before removing this one."); return; }
+    if (itemCount) {
+      setRoomToRemove(name);
+      setMoveRoom(rooms.find((entry) => entry !== name) ?? "");
+      return;
+    }
+    void deleteRoom(name);
+  }
+
+  async function deleteRoom(name: string, moveTo?: string) {
+    setRoomError("");
+    const destination = moveTo ? `&moveTo=${encodeURIComponent(moveTo)}` : "";
+    const response = await fetch(`/api/rooms?name=${encodeURIComponent(name)}${destination}`, { method: "DELETE" });
+    if (response.ok) {
+      setRooms((current) => current.filter((entry) => entry !== name));
+      if (moveTo) setItems((current) => current.map((item) => item.room === name ? { ...item, room: moveTo } : item));
+      if (filter === name) setFilter(moveTo ?? "All rooms");
+      if (room === name) setRoom(moveTo ?? rooms.find((entry) => entry !== name) ?? "");
+      setRoomToRemove(null);
+    }
     else { const data = await response.json(); setRoomError(data.error ?? "This room could not be deleted."); }
+  }
+
+  async function persistOrder(next: Item[]) {
+    setSaving(true);
+    try { await fetch("/api/items", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ order: next.map((item) => item.id) }) }); }
+    finally { setSaving(false); }
+  }
+
+  function reorderLine(sourceId: number, targetId: number, after = false) {
+    if (sourceId === targetId) return;
+    const source = items.find((item) => item.id === sourceId);
+    if (!source) return;
+    const without = items.filter((item) => item.id !== sourceId);
+    const targetIndex = without.findIndex((item) => item.id === targetId);
+    if (targetIndex < 0) return;
+    const next = [...without];
+    next.splice(targetIndex + (after ? 1 : 0), 0, source);
+    setItems(next);
+    void persistOrder(next);
+  }
+
+  function moveLineWithKeyboard(item: Item, direction: -1 | 1) {
+    const index = shownItems.findIndex((entry) => entry.id === item.id);
+    const target = shownItems[index + direction];
+    if (target) reorderLine(item.id, target.id, direction > 0);
+  }
+
+  function handleRowDrop(item: Item, event: React.DragEvent<HTMLDivElement>) {
+    if (event.dataTransfer.types.includes("application/x-punch-line")) {
+      event.preventDefault();
+      const sourceId = Number(event.dataTransfer.getData("application/x-punch-line")) || draggingLineId;
+      const after = event.clientY > event.currentTarget.getBoundingClientRect().top + event.currentTarget.getBoundingClientRect().height / 2;
+      if (sourceId) reorderLine(sourceId, item.id, after);
+      setDraggingLineId(null); setReorderTargetId(null);
+      return;
+    }
+    openDroppedPhoto(item, event);
   }
 
   async function saveAddress(next: string) {
@@ -202,19 +262,19 @@ export default function Home() {
         <section className="list-sheet" aria-label="Punch-list items">
           <div className="list-heading"><span className="number-col">No.</span><span className="task-col">Item</span><span className="room-col">Room</span><span className="photo-col">Photo</span><span className="status-col">Done</span><span className="action-col" /></div>
           {shownItems.map((item, index) => <div
-            className={`list-row ${item.status === "completed" ? "is-done" : ""} ${dragItemId === item.id ? "is-drop-target" : ""}`}
+            className={`list-row ${item.status === "completed" ? "is-done" : ""} ${dragItemId === item.id ? "is-drop-target" : ""} ${reorderTargetId === item.id ? "is-reorder-target" : ""}`}
             key={item.id}
-            onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) setDragItemId(item.id); }}
-            onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
-            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragItemId(null); }}
-            onDrop={(event) => openDroppedPhoto(item, event)}
+            onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) setDragItemId(item.id); if (event.dataTransfer.types.includes("application/x-punch-line")) setReorderTargetId(item.id); }}
+            onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } else if (event.dataTransfer.types.includes("application/x-punch-line")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setReorderTargetId(item.id); } }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setDragItemId(null); setReorderTargetId(null); } }}
+            onDrop={(event) => handleRowDrop(item, event)}
           >
             <span className="number-col">{String(index + 1).padStart(2, "0")}</span>
             <div className="task-col task-cell"><button className="task-title" onClick={() => toggle(item)}>{item.title}</button>{photos.some((photo) => photo.itemId === item.id) && <span className="print-photo-links">Photos: {photos.filter((photo) => photo.itemId === item.id).map((photo, photoIndex) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer">Photo {photoIndex + 1}</a>)}</span>}</div>
             <span className="room-col"><button className="room-tag" onClick={() => setFilter(item.room)}>{item.room}</button></span>
             <span className="photo-col"><button className="photo-button" onClick={() => setPhotoItem(item)} aria-label={`Photos for ${item.title}`}><span>▣</span>{photos.filter((photo) => photo.itemId === item.id).length > 0 && <em>{photos.filter((photo) => photo.itemId === item.id).length}</em>}</button></span>
             <span className="status-col"><button className="check" onClick={() => toggle(item)} aria-label={`${item.status === "completed" ? "Reopen" : "Complete"} ${item.title}`}>{item.status === "completed" ? "✓" : ""}</button></span>
-            <span className="action-col"><button className="row-edit" onClick={() => setEditItem(item)} aria-label={`Edit ${item.title}`}>•••</button></span>
+            <span className="action-col"><button className="drag-line" draggable onDragStart={(event) => { event.dataTransfer.setData("application/x-punch-line", String(item.id)); event.dataTransfer.effectAllowed = "move"; setDraggingLineId(item.id); }} onDragEnd={() => { setDraggingLineId(null); setReorderTargetId(null); }} onKeyDown={(event) => { if (event.key === "ArrowUp") { event.preventDefault(); moveLineWithKeyboard(item, -1); } if (event.key === "ArrowDown") { event.preventDefault(); moveLineWithKeyboard(item, 1); } }} aria-label={`Reorder ${item.title}. Drag, or use arrow keys.`} title="Drag to reorder">☰</button><button className="row-edit" onClick={() => setEditItem(item)} aria-label={`Edit ${item.title}`}>•••</button></span>
           </div>)}
           {!shownItems.length && <div className="empty-line">No items in this room yet.</div>}
           <button className="last-line" onClick={() => document.querySelector<HTMLInputElement>(".quick-add input")?.focus()}>+ Add another line</button>
@@ -223,7 +283,7 @@ export default function Home() {
         <footer className="paper-footer"><span>{saving ? "Saving…" : "All changes saved"}</span><button onClick={() => downloadPunchListPdf(address, items, photos)}>Download PDF</button></footer>
       </section>
 
-      {showRoomForm && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setShowRoomForm(false)}><form className="room-dialog manage-rooms" onSubmit={addRoom}><button type="button" className="close" onClick={() => setShowRoomForm(false)}>×</button><span className="dialog-house">⌂</span><h2>Manage rooms</h2><p>Add a room, or remove an empty one.</p><div className="room-manager-list">{rooms.map((name) => <div key={name}><span>{name}<small>{items.filter((item) => item.room === name).length} items</small></span><button type="button" onClick={() => deleteRoom(name)} aria-label={`Delete ${name}`}>Delete</button></div>)}</div>{roomError && <div className="room-error">{roomError}</div>}<input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="New room name" /><div><button type="button" onClick={() => setShowRoomForm(false)}>Done</button><button type="submit" className="solid" disabled={!newRoom.trim()}>Add room</button></div></form></div>}
+      {showRoomForm && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setShowRoomForm(false)}><form className="room-dialog manage-rooms" onSubmit={addRoom}><button type="button" className="close" onClick={() => setShowRoomForm(false)}>×</button><span className="dialog-house">⌂</span><h2>Manage rooms</h2><p>Add a room, or move a room&apos;s lines before removing it.</p><div className="room-manager-list">{rooms.map((name) => <div key={name}><span>{name}<small>{items.filter((item) => item.room === name).length} lines</small></span><button type="button" onClick={() => requestDeleteRoom(name)} aria-label={`Remove ${name}`}>Remove</button></div>)}</div>{roomToRemove && <div className="room-remove-confirm"><strong>Remove {roomToRemove}</strong><p>Move its {items.filter((item) => item.room === roomToRemove).length} lines to:</p><select value={moveRoom} onChange={(event) => setMoveRoom(event.target.value)}>{rooms.filter((name) => name !== roomToRemove).map((name) => <option key={name}>{name}</option>)}</select><div><button type="button" onClick={() => setRoomToRemove(null)}>Cancel</button><button type="button" className="solid" onClick={() => void deleteRoom(roomToRemove, moveRoom)}>Move &amp; remove</button></div></div>}{roomError && <div className="room-error">{roomError}</div>}<input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="New room name" /><div><button type="button" onClick={() => setShowRoomForm(false)}>Done</button><button type="submit" className="solid" disabled={!newRoom.trim()}>Add room</button></div></form></div>}
       {editItem && <EditItemDialog item={editItem} rooms={rooms} onSave={updateLine} onDelete={deleteLine} onClose={() => setEditItem(null)} />}
       {photoItem && <PhotoGallery item={photoItem} photos={photos.filter((photo) => photo.itemId === photoItem.id)} onClose={() => setPhotoItem(null)} onAdded={(photo) => setPhotos((current) => [...current, photo])} />}
       {quickPhoto && <div className="gallery-backdrop quick-markup"><header className="gallery-head"><button onClick={() => setQuickPhoto(null)}>×</button><div><span>New item · {room}</span><b>{task}</b></div><em>Mark up before adding</em></header><section className="gallery-stage"><MarkupEditor src={quickPhoto} onCancel={() => setQuickPhoto(null)} saveLabel="Add item" onSave={async (blob) => { setQuickPhoto(null); await createTask(blob); }} /></section></div>}
