@@ -40,6 +40,8 @@ export default function Home() {
   const [editingAddress, setEditingAddress] = useState(false);
   const [roomError, setRoomError] = useState("");
   const [quickPhoto, setQuickPhoto] = useState<string | null>(null);
+  const [droppedPhoto, setDroppedPhoto] = useState<{ item: Item; src: string } | null>(null);
+  const [dragItemId, setDragItemId] = useState<number | null>(null);
   const quickCamera = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -103,6 +105,22 @@ export default function Home() {
     const body = new FormData(); body.append("file", file, name); body.append("itemId", String(itemId));
     const response = await fetch("/api/photos", { method: "POST", body });
     if (response.ok) { const data = await response.json(); setPhotos((current) => [...current, data.photo]); }
+  }
+
+  function openDroppedPhoto(item: Item, event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragItemId(null);
+    const file = Array.from(event.dataTransfer.files).find((entry) => entry.type.startsWith("image/"));
+    if (!file) return;
+    setDroppedPhoto((current) => {
+      if (current) URL.revokeObjectURL(current.src);
+      return { item, src: URL.createObjectURL(file) };
+    });
+  }
+
+  function closeDroppedPhoto() {
+    if (droppedPhoto) URL.revokeObjectURL(droppedPhoto.src);
+    setDroppedPhoto(null);
   }
 
   async function toggle(item: Item) {
@@ -183,7 +201,14 @@ export default function Home() {
 
         <section className="list-sheet" aria-label="Punch-list items">
           <div className="list-heading"><span className="number-col">No.</span><span className="task-col">Item</span><span className="room-col">Room</span><span className="photo-col">Photo</span><span className="status-col">Done</span><span className="action-col" /></div>
-          {shownItems.map((item, index) => <div className={`list-row ${item.status === "completed" ? "is-done" : ""}`} key={item.id}>
+          {shownItems.map((item, index) => <div
+            className={`list-row ${item.status === "completed" ? "is-done" : ""} ${dragItemId === item.id ? "is-drop-target" : ""}`}
+            key={item.id}
+            onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) setDragItemId(item.id); }}
+            onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragItemId(null); }}
+            onDrop={(event) => openDroppedPhoto(item, event)}
+          >
             <span className="number-col">{String(index + 1).padStart(2, "0")}</span>
             <div className="task-col task-cell"><button className="task-title" onClick={() => toggle(item)}>{item.title}</button>{photos.some((photo) => photo.itemId === item.id) && <span className="print-photo-links">Photos: {photos.filter((photo) => photo.itemId === item.id).map((photo, photoIndex) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer">Photo {photoIndex + 1}</a>)}</span>}</div>
             <span className="room-col"><button className="room-tag" onClick={() => setFilter(item.room)}>{item.room}</button></span>
@@ -202,6 +227,7 @@ export default function Home() {
       {editItem && <EditItemDialog item={editItem} rooms={rooms} onSave={updateLine} onDelete={deleteLine} onClose={() => setEditItem(null)} />}
       {photoItem && <PhotoGallery item={photoItem} photos={photos.filter((photo) => photo.itemId === photoItem.id)} onClose={() => setPhotoItem(null)} onAdded={(photo) => setPhotos((current) => [...current, photo])} />}
       {quickPhoto && <div className="gallery-backdrop quick-markup"><header className="gallery-head"><button onClick={() => setQuickPhoto(null)}>×</button><div><span>New item · {room}</span><b>{task}</b></div><em>Mark up before adding</em></header><section className="gallery-stage"><MarkupEditor src={quickPhoto} onCancel={() => setQuickPhoto(null)} saveLabel="Add item" onSave={async (blob) => { setQuickPhoto(null); await createTask(blob); }} /></section></div>}
+      {droppedPhoto && <div className="gallery-backdrop quick-markup" role="dialog" aria-modal="true" aria-label={`Annotate photo for ${droppedPhoto.item.title}`}><header className="gallery-head"><button onClick={closeDroppedPhoto} aria-label="Cancel photo annotation">×</button><div><span>{droppedPhoto.item.room}</span><b>{droppedPhoto.item.title}</b></div><em>Annotate before attaching</em></header><section className="gallery-stage"><MarkupEditor src={droppedPhoto.src} onCancel={closeDroppedPhoto} saveLabel="Attach photo" onSave={async (blob) => { const itemId = droppedPhoto.item.id; await uploadPhoto(itemId, blob, `annotated-${itemId}.jpg`); closeDroppedPhoto(); }} /></section></div>}
     </main>
   );
 }
@@ -258,6 +284,7 @@ function MarkupEditor({ src, onCancel, onSave, saveLabel = "Save copy" }: { src:
   const original = useRef<ImageData | null>(null);
   const [tool, setTool] = useState<"pen" | "circle" | "arrow" | "text">("pen");
   const [color, setColor] = useState("#ef5945");
+  const [strokeWidth, setStrokeWidth] = useState(8);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -295,7 +322,7 @@ function MarkupEditor({ src, onCancel, onSave, saveLabel = "Save copy" }: { src:
   function draw(event: React.PointerEvent) {
     if (!drawing.current || !canvas.current) return;
     const point = coordinates(event); const context = canvas.current.getContext("2d")!; const start = drawing.current;
-    context.strokeStyle = color; context.fillStyle = color; context.lineWidth = Math.max(5, canvas.current.width / 170); context.lineCap = "round";
+    context.strokeStyle = color; context.fillStyle = color; context.lineWidth = Math.max(2, strokeWidth * canvas.current.width / 1200); context.lineCap = "round";
     if (tool === "circle") { context.putImageData(start.snapshot, 0, 0); context.beginPath(); context.ellipse((start.x + point.x) / 2, (start.y + point.y) / 2, Math.abs(point.x - start.x) / 2, Math.abs(point.y - start.y) / 2, 0, 0, Math.PI * 2); context.stroke(); }
     else if (tool === "arrow") { context.putImageData(start.snapshot, 0, 0); context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); const angle = Math.atan2(point.y - start.y, point.x - start.x); const head = Math.max(22, canvas.current.width / 45); context.beginPath(); context.moveTo(point.x, point.y); context.lineTo(point.x - head * Math.cos(angle - Math.PI / 6), point.y - head * Math.sin(angle - Math.PI / 6)); context.lineTo(point.x - head * Math.cos(angle + Math.PI / 6), point.y - head * Math.sin(angle + Math.PI / 6)); context.closePath(); context.fill(); }
     else if (tool === "pen") { context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(point.x, point.y); context.stroke(); drawing.current = { ...point, snapshot: start.snapshot }; }
@@ -304,5 +331,5 @@ function MarkupEditor({ src, onCancel, onSave, saveLabel = "Save copy" }: { src:
   function reset() { if (original.current && canvas.current) { canvas.current.getContext("2d")?.putImageData(original.current, 0, 0); history.current = []; } }
   function save() { canvas.current?.toBlob((blob) => blob && onSave(blob), "image/jpeg", .92); }
 
-  return <div className="markup"><canvas ref={canvas} onPointerDown={start} onPointerMove={draw} onPointerUp={() => drawing.current = null} /><div className="markup-bar"><div className="markup-left"><button onClick={onCancel}>Cancel</button><button onClick={undo}>↶ Undo</button><button onClick={reset}>Reset</button></div><div>{(["pen", "circle", "arrow", "text"] as const).map((entry) => <button key={entry} className={tool === entry ? "active" : ""} onClick={() => setTool(entry)}><span>{entry === "pen" ? "✎" : entry === "circle" ? "○" : entry === "arrow" ? "↗" : "T"}</span>{entry}</button>)}<label><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><i style={{ background: color }} />Color</label></div><button className="save-markup" onClick={save} disabled={!ready}>{saveLabel}</button></div></div>;
+  return <div className="markup"><canvas ref={canvas} onPointerDown={start} onPointerMove={draw} onPointerUp={() => drawing.current = null} /><div className="markup-bar"><div className="markup-left"><button onClick={onCancel}>Cancel</button><button onClick={undo}>↶ Undo</button><button onClick={reset}>Reset</button></div><div>{(["pen", "circle", "arrow", "text"] as const).map((entry) => <button key={entry} className={tool === entry ? "active" : ""} onClick={() => setTool(entry)}><span>{entry === "pen" ? "✎" : entry === "circle" ? "○" : entry === "arrow" ? "↗" : "T"}</span>{entry}</button>)}<label><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /><i style={{ background: color }} />Color</label><label className="thickness-control"><input type="range" min="2" max="24" step="1" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} aria-label="Annotation line thickness" /><i style={{ width: Math.max(4, strokeWidth), height: Math.max(4, strokeWidth), background: color }} />Thickness</label></div><button className="save-markup" onClick={save} disabled={!ready}>{saveLabel}</button></div></div>;
 }
