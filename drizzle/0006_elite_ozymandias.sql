@@ -1,1 +1,0 @@
-ALTER TABLE `items` ADD `sort_order` integer DEFAULT 0 NOT NULL;

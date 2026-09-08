@@ -1,14 +1,12 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { downloadPunchListPdf } from "./report-pdf";
 
 type Theme = "notes" | "blueprint" | "ledger";
-type Item = { id: number; room: string; title: string; status: "open" | "in_progress" | "completed"; sortOrder?: number };
+type Item = { id: number; room: string; title: string; status: "open" | "completed" };
 type Photo = { id: number; itemId: number; url: string; createdAt: string };
 
-const starterRooms = ["Kitchen", "Living Room", "Primary Bedroom", "Bathroom", "Basement", "Exterior"];
 const themes: { id: Theme; label: string; hint: string }[] = [
   { id: "notes", label: "Field notes", hint: "Warm paper" },
   { id: "blueprint", label: "Blueprint", hint: "House plans" },
@@ -17,8 +15,8 @@ const themes: { id: Theme; label: string; hint: string }[] = [
 
 export default function Home() {
   const [items, setItems] = useState<Item[]>([]);
-  const [rooms, setRooms] = useState(starterRooms);
-  const [room, setRoom] = useState(starterRooms[0]);
+  const [rooms, setRooms] = useState<string[]>([]);
+  const [room, setRoom] = useState("");
   const [filter, setFilter] = useState("All rooms");
   const [theme, setTheme] = useState<Theme>("notes");
   const [showThemes, setShowThemes] = useState(false);
@@ -29,7 +27,7 @@ export default function Home() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photoItem, setPhotoItem] = useState<Item | null>(null);
   const [editItem, setEditItem] = useState<Item | null>(null);
-  const [address, setAddress] = useState("123 Maple Street");
+  const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [roomError, setRoomError] = useState("");
   const [roomToRemove, setRoomToRemove] = useState<string | null>(null);
@@ -59,7 +57,7 @@ export default function Home() {
         setRoom(names[0] ?? "");
       }
       if (photoData?.photos) setPhotos(photoData.photos);
-      if (settingsData?.address) setAddress(settingsData.address);
+      if (settingsData && typeof settingsData.address === "string") setAddress(settingsData.address);
     }).catch(() => undefined);
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -76,13 +74,13 @@ export default function Home() {
 
   async function createTask(photo?: Blob) {
     const title = task.trim();
-    if (!title) return null;
+    if (!title || !room) return null;
     const optimistic: Item = { id: Date.now(), room, title, status: "open" };
     setItems((current) => [...current, optimistic]);
     setTask("");
     setSaving(true);
     try {
-      const response = await fetch("/api/items", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room, title, notes: "" }) });
+      const response = await fetch("/api/items", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room, title }) });
       if (response.ok) {
         const data = await response.json();
         setItems((current) => current.map((item) => item.id === optimistic.id ? data.item : item));
@@ -125,7 +123,7 @@ export default function Home() {
     setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status } : entry));
     setSaving(true);
     try {
-      await fetch("/api/items", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: item.id, status, verified: false }) });
+      await fetch("/api/items", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: item.id, status }) });
     } finally { setSaving(false); }
   }
 
@@ -232,17 +230,17 @@ export default function Home() {
       <section className="page" id="top">
         <div className="paper-holes" aria-hidden="true"><i /><i /><i /></div>
         <header className="page-head">
-          <div>{editingAddress ? <AddressEditor value={address} onCancel={() => setEditingAddress(false)} onSave={saveAddress} /> : <button className="kicker address-button" onClick={() => setEditingAddress(true)} title="Change address">{address} <span>✎</span></button>}<h1>House punch list</h1><p className="date-line">Final walk-through · {items.length - completed} items remaining</p></div>
+          <div>{editingAddress ? <AddressEditor value={address} onCancel={() => setEditingAddress(false)} onSave={saveAddress} /> : <button className="kicker address-button" onClick={() => setEditingAddress(true)} title="Change address">{address || "Add address"} <span>✎</span></button>}<h1>House punch list</h1><p className="date-line">Final walk-through · {items.length - completed} items remaining</p></div>
           <div className="progress-stamp"><strong>{completed}/{items.length}</strong><span>complete</span></div>
         </header>
 
         <form className="quick-add" onSubmit={addTask}>
           <span className="add-mark">+</span>
           <input value={task} onChange={(event) => setTask(event.target.value)} placeholder="Write the next item…" aria-label="New punch-list item" />
-          <button type="button" className="quick-camera" disabled={!task.trim()} onClick={() => quickCamera.current?.click()} aria-label="Take a photo for this new item">▣</button>
+          <button type="button" className="quick-camera" disabled={!task.trim() || !room} onClick={() => quickCamera.current?.click()} aria-label="Take a photo for this new item">▣</button>
           <input ref={quickCamera} hidden type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) setQuickPhoto(URL.createObjectURL(file)); event.target.value = ""; }} />
           <select value={room} onChange={(event) => setRoom(event.target.value)} aria-label="Room for new item">{rooms.map((name) => <option key={name}>{name}</option>)}</select>
-          <button type="submit" disabled={!task.trim()}>Add</button>
+          <button type="submit" disabled={!task.trim() || !room}>Add</button>
         </form>
 
         <div className="room-strip">
