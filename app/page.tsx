@@ -8,13 +8,6 @@ type Theme = "notes" | "blueprint" | "ledger";
 type Item = { id: number; room: string; title: string; status: "open" | "in_progress" | "completed"; sortOrder?: number };
 type Photo = { id: number; itemId: number; url: string; createdAt: string };
 
-const starterItems: Item[] = [
-  { id: 1, room: "Kitchen", title: "Touch up paint near kitchen window", status: "open" },
-  { id: 2, room: "Kitchen", title: "Adjust cabinet door above refrigerator", status: "open" },
-  { id: 3, room: "Primary Bedroom", title: "Fill nail holes behind closet door", status: "completed" },
-  { id: 4, room: "Basement", title: "Seal gap around utility pipe", status: "completed" },
-];
-
 const starterRooms = ["Kitchen", "Living Room", "Primary Bedroom", "Bathroom", "Basement", "Exterior"];
 const themes: { id: Theme; label: string; hint: string }[] = [
   { id: "notes", label: "Field notes", hint: "Warm paper" },
@@ -23,9 +16,9 @@ const themes: { id: Theme; label: string; hint: string }[] = [
 ];
 
 export default function Home() {
-  const [items, setItems] = useState<Item[]>(starterItems);
+  const [items, setItems] = useState<Item[]>([]);
   const [rooms, setRooms] = useState(starterRooms);
-  const [room, setRoom] = useState("Kitchen");
+  const [room, setRoom] = useState(starterRooms[0]);
   const [filter, setFilter] = useState("All rooms");
   const [theme, setTheme] = useState<Theme>("notes");
   const [showThemes, setShowThemes] = useState(false);
@@ -59,11 +52,11 @@ export default function Home() {
       fetch("/api/photos").then((response) => response.ok ? response.json() : null),
       fetch("/api/settings").then((response) => response.ok ? response.json() : null),
     ]).then(([itemData, roomData, photoData, settingsData]) => {
-      if (itemData?.items?.length) setItems(itemData.items);
-      if (roomData?.rooms?.length) {
+      if (itemData?.items) setItems(itemData.items);
+      if (roomData?.rooms) {
         const names = roomData.rooms.map((entry: { name: string }) => entry.name);
         setRooms(names);
-        setRoom(names[0]);
+        setRoom(names[0] ?? "");
       }
       if (photoData?.photos) setPhotos(photoData.photos);
       if (settingsData?.address) setAddress(settingsData.address);

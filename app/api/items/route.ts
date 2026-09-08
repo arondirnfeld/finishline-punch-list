@@ -12,16 +12,6 @@ async function ready() {
     d1.prepare(`CREATE INDEX IF NOT EXISTS idx_items_project_room ON items(project_id, room)`),
     d1.prepare(`CREATE INDEX IF NOT EXISTS idx_items_project_status ON items(project_id, status)`),
   ]);
-  const count = await d1.prepare("SELECT COUNT(*) AS total FROM items WHERE project_id = 1").first<{ total: number }>();
-  const seedMarker = await d1.prepare("INSERT OR IGNORE INTO app_metadata (key, value) VALUES ('starter_items_seeded', CURRENT_TIMESTAMP)").run();
-  if (seedMarker.meta.changes > 0 && !count?.total) {
-    await d1.batch([
-      d1.prepare("INSERT INTO items (room, title, notes, status) VALUES (?, ?, ?, ?)").bind("Kitchen", "Touch up paint near kitchen window", "Small chip along the lower right trim.", "open"),
-      d1.prepare("INSERT INTO items (room, title, notes, status) VALUES (?, ?, ?, ?)").bind("Kitchen", "Adjust cabinet door above refrigerator", "Door rubs when closing.", "in_progress"),
-      d1.prepare("INSERT INTO items (room, title, notes, status) VALUES (?, ?, ?, ?)").bind("Primary Bedroom", "Fill nail holes behind closet door", "Three holes at eye level.", "completed"),
-      d1.prepare("INSERT INTO items (room, title, notes, status, verified) VALUES (?, ?, ?, ?, ?)").bind("Basement", "Seal gap around utility pipe", "Draft visible along the exterior wall.", "completed", 1),
-    ]);
-  }
   const orderState = await d1.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN sort_order != 0 THEN 1 ELSE 0 END) AS positioned FROM items WHERE project_id = 1").first<{ total: number; positioned: number }>();
   if (orderState?.total && !orderState.positioned) {
     await d1.prepare(`WITH ordered AS (SELECT id, ROW_NUMBER() OVER (ORDER BY room, id DESC) AS position FROM items WHERE project_id = 1) UPDATE items SET sort_order = (SELECT position FROM ordered WHERE ordered.id = items.id) WHERE project_id = 1`).run();
