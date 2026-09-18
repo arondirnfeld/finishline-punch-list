@@ -1,16 +1,10 @@
 # Punch House
 
-A simple, paper-inspired house punch list.
+A simple, paper-inspired house punch list on **Next.js + Vercel**, with data in **Supabase**.
 
-- Add one-line items and check them off.
-- Organize every line with a room tag.
-- Add new rooms whenever needed.
-- Attach multiple photos to any line, use the camera, and mark them up.
-- Edit or delete list lines, manage rooms, and rename the home address.
-- Switch between Field Notes, Blueprint, and Clean Ledger designs.
-- Download a PDF of the list.
-
-Issue, room, and photo metadata are stored in D1; image files are stored in R2. The selected visual design is a device-local preference.
+- Email/password and Google sign-in
+- Each user has their own rooms, items, photos, and address
+- Photos stored in Supabase Storage (`punch-photos`)
 
 ## Run locally
 
@@ -20,3 +14,18 @@ npm run dev
 ```
 
 Open http://localhost:3000/
+
+Requires `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
+
+## Google auth
+
+In the Supabase dashboard → Authentication → Providers → Google, add your Google OAuth Client ID and Secret. Redirect URI:
+
+`https://<your-project-ref>.supabase.co/auth/v1/callback`
+
+Also add your app URLs under Authentication → URL Configuration (Site URL + Redirect URLs), e.g. `http://localhost:3000` and your Vercel domain.

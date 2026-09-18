@@ -1,37 +1,43 @@
-import { env } from "cloudflare:workers";
-
-type Bindings = { DB: D1Database };
-const db = () => (env as unknown as Bindings).DB;
-
-async function ready() {
-  await db()
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS project_settings (
-        project_id INTEGER PRIMARY KEY DEFAULT 1,
-        address TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-    )
-    .run();
-  await db().prepare("INSERT OR IGNORE INTO project_settings (project_id, address) VALUES (1, '')").run();
-}
+import { requireUser } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
 export async function GET() {
-  await ready();
-  const row = await db()
-    .prepare("SELECT address FROM project_settings WHERE project_id = 1")
-    .first<{ address: string }>();
-  return Response.json({ address: row?.address ?? "" });
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
+  const { data, error } = await supabase
+    .from("project_settings")
+    .select("address")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ address: data?.address ?? "" });
 }
 
 export async function PATCH(request: Request) {
-  await ready();
-  const data = (await request.json()) as { address?: string };
-  const address = data.address?.trim();
-  if (!address) return Response.json({ error: "Address is required" }, { status: 400 });
-  await db()
-    .prepare("UPDATE project_settings SET address = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = 1")
-    .bind(address)
-    .run();
-  return Response.json({ address });
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
+  const body = (await request.json()) as { address?: string };
+  const address = body.address?.trim();
+  if (!address) return NextResponse.json({ error: "Address is required" }, { status: 400 });
+
+  const { data, error } = await supabase
+    .from("project_settings")
+    .upsert(
+      {
+        user_id: user.id,
+        address,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    )
+    .select("address")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ address: data.address });
 }

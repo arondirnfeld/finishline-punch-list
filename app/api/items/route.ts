@@ -1,28 +1,13 @@
-import { env } from "cloudflare:workers";
+import { requireUser } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
-type Bindings = { DB: D1Database; MEDIA: R2Bucket };
-const bindings = () => env as unknown as Bindings;
-const db = () => bindings().DB;
-
-async function ready() {
-  const d1 = db();
-  await d1.batch([
-    d1.prepare(`CREATE TABLE IF NOT EXISTS items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id INTEGER NOT NULL DEFAULT 1,
-      room TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`),
-    d1.prepare(`CREATE INDEX IF NOT EXISTS idx_items_project_room ON items(project_id, room)`),
-    d1.prepare(`CREATE INDEX IF NOT EXISTS idx_items_project_status ON items(project_id, status)`),
-  ]);
-}
-
-function row(item: Record<string, unknown>) {
+function row(item: {
+  id: number;
+  room: string;
+  title: string;
+  status: string;
+  sort_order: number;
+}) {
   return {
     id: item.id,
     room: item.room,
@@ -33,33 +18,61 @@ function row(item: Record<string, unknown>) {
 }
 
 export async function GET() {
-  await ready();
-  const result = await db()
-    .prepare("SELECT id, room, title, status, sort_order FROM items WHERE project_id = 1 ORDER BY sort_order, id")
-    .all();
-  return Response.json({ items: result.results.map((r) => row(r as Record<string, unknown>)) });
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
+  const { data, error } = await supabase
+    .from("items")
+    .select("id, room, title, status, sort_order")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ items: (data ?? []).map(row) });
 }
 
 export async function POST(request: Request) {
-  await ready();
-  const data = (await request.json()) as { room?: string; title?: string };
-  if (!data.title?.trim() || !data.room?.trim()) {
-    return Response.json({ error: "Room and description are required" }, { status: 400 });
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
+  const body = (await request.json()) as { room?: string; title?: string };
+  if (!body.title?.trim() || !body.room?.trim()) {
+    return NextResponse.json({ error: "Room and description are required" }, { status: 400 });
   }
-  const result = await db()
-    .prepare(
-      `INSERT INTO items (room, title, sort_order)
-       VALUES (?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM items WHERE project_id = 1))
-       RETURNING id, room, title, status, sort_order`,
-    )
-    .bind(data.room.trim(), data.title.trim())
-    .first();
-  return Response.json({ item: row(result as Record<string, unknown>) }, { status: 201 });
+
+  const { data: maxRow } = await supabase
+    .from("items")
+    .select("sort_order")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const sortOrder = (maxRow?.sort_order ?? 0) + 1;
+  const { data, error } = await supabase
+    .from("items")
+    .insert({
+      user_id: user.id,
+      room: body.room.trim(),
+      title: body.title.trim(),
+      sort_order: sortOrder,
+    })
+    .select("id, room, title, status, sort_order")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ item: row(data) }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
-  await ready();
-  const data = (await request.json()) as {
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
+  const body = (await request.json()) as {
     id?: number;
     order?: number[];
     room?: string;
@@ -67,52 +80,73 @@ export async function PATCH(request: Request) {
     status?: string;
   };
 
-  if (Array.isArray(data.order)) {
-    const ids = [...new Set(data.order.filter((id) => Number.isInteger(id) && id > 0))];
-    if (!ids.length) return Response.json({ error: "At least one item is required" }, { status: 400 });
-    await db().batch(
-      ids.map((id, index) =>
-        db()
-          .prepare("UPDATE items SET sort_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = 1")
-          .bind(index + 1, id),
-      ),
+  if (Array.isArray(body.order)) {
+    const ids = [...new Set(body.order.filter((id) => Number.isInteger(id) && id > 0))];
+    if (!ids.length) return NextResponse.json({ error: "At least one item is required" }, { status: 400 });
+
+    const updates = ids.map((id, index) =>
+      supabase
+        .from("items")
+        .update({ sort_order: index + 1, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id),
     );
-    return Response.json({ reordered: true });
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 });
+    return NextResponse.json({ reordered: true });
   }
 
-  if (!data.id) return Response.json({ error: "Item id is required" }, { status: 400 });
-  const current = await db()
-    .prepare("SELECT id, room, title, status, sort_order FROM items WHERE id = ? AND project_id = 1")
-    .bind(data.id)
-    .first();
-  if (!current) return Response.json({ error: "Item not found" }, { status: 404 });
+  if (!body.id) return NextResponse.json({ error: "Item id is required" }, { status: 400 });
 
-  const c = current as Record<string, unknown>;
-  const status = data.status === "open" || data.status === "completed" ? data.status : c.status;
-  const result = await db()
-    .prepare(
-      `UPDATE items
-       SET room = ?, title = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?
-       RETURNING id, room, title, status, sort_order`,
-    )
-    .bind(data.room ?? c.room, data.title ?? c.title, status, data.id)
-    .first();
-  return Response.json({ item: row(result as Record<string, unknown>) });
+  const { data: current, error: currentError } = await supabase
+    .from("items")
+    .select("id, room, title, status, sort_order")
+    .eq("id", body.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (currentError) return NextResponse.json({ error: currentError.message }, { status: 500 });
+  if (!current) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+  const status = body.status === "open" || body.status === "completed" ? body.status : current.status;
+  const { data, error } = await supabase
+    .from("items")
+    .update({
+      room: body.room ?? current.room,
+      title: body.title ?? current.title,
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", body.id)
+    .eq("user_id", user.id)
+    .select("id, room, title, status, sort_order")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ item: row(data) });
 }
 
 export async function DELETE(request: Request) {
-  await ready();
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
   const id = Number(new URL(request.url).searchParams.get("id"));
-  if (!id) return Response.json({ error: "Item id is required" }, { status: 400 });
-  const keys = await db()
-    .prepare("SELECT object_key FROM photos WHERE item_id = ? AND project_id = 1")
-    .bind(id)
-    .all<{ object_key: string }>();
-  if (keys.results.length) await bindings().MEDIA.delete(keys.results.map((entry) => entry.object_key));
-  await db().batch([
-    db().prepare("DELETE FROM photos WHERE item_id = ? AND project_id = 1").bind(id),
-    db().prepare("DELETE FROM items WHERE id = ? AND project_id = 1").bind(id),
-  ]);
-  return Response.json({ deleted: true });
+  if (!id) return NextResponse.json({ error: "Item id is required" }, { status: 400 });
+
+  const { data: photoRows } = await supabase
+    .from("photos")
+    .select("storage_path")
+    .eq("item_id", id)
+    .eq("user_id", user.id);
+
+  const paths = (photoRows ?? []).map((photo) => photo.storage_path).filter(Boolean);
+  if (paths.length) {
+    await supabase.storage.from("punch-photos").remove(paths);
+  }
+
+  const { error } = await supabase.from("items").delete().eq("id", id).eq("user_id", user.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ deleted: true });
 }

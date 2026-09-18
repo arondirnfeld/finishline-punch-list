@@ -1,51 +1,101 @@
-import { env } from "cloudflare:workers";
+import { requireUser } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
-type Bindings = { DB: D1Database; MEDIA: R2Bucket };
-const bindings = () => env as unknown as Bindings;
-
-async function ready() {
-  const { DB } = bindings();
-  await DB.batch([
-    DB.prepare("CREATE TABLE IF NOT EXISTS photos (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, item_id INTEGER NOT NULL, object_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    DB.prepare("CREATE INDEX IF NOT EXISTS idx_photos_project_item ON photos(project_id, item_id)"),
-  ]);
-}
-
-function metadata(row: Record<string, unknown>) {
-  return { id: row.id, itemId: row.item_id, createdAt: row.created_at, url: `/api/photos?id=${row.id}&file=1` };
+function metadata(row: { id: number; item_id: number; created_at: string }) {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    createdAt: row.created_at,
+    url: `/api/photos?id=${row.id}&file=1`,
+  };
 }
 
 export async function GET(request: Request) {
-  await ready();
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
   const url = new URL(request.url);
   const id = Number(url.searchParams.get("id"));
+
   if (id && url.searchParams.get("file") === "1") {
-    const row = await bindings().DB.prepare("SELECT object_key FROM photos WHERE id = ? AND project_id = 1").bind(id).first<{ object_key: string }>();
-    if (!row) return new Response("Not found", { status: 404 });
-    const object = await bindings().MEDIA.get(row.object_key);
-    if (!object) return new Response("Not found", { status: 404 });
-    const headers = new Headers(); object.writeHttpMetadata(headers); headers.set("etag", object.httpEtag); headers.set("cache-control", "private, max-age=3600");
-    return new Response(object.body, { headers });
+    const { data: row } = await supabase
+      .from("photos")
+      .select("storage_path")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!row) return new NextResponse("Not found", { status: 404 });
+
+    const { data, error } = await supabase.storage.from("punch-photos").download(row.storage_path);
+    if (error || !data) return new NextResponse("Not found", { status: 404 });
+
+    const headers = new Headers();
+    headers.set("content-type", data.type || "image/jpeg");
+    headers.set("cache-control", "private, max-age=3600");
+    return new NextResponse(data.stream(), { headers });
   }
+
   const itemId = Number(url.searchParams.get("itemId"));
-  const query = itemId
-    ? bindings().DB.prepare("SELECT id, item_id, created_at FROM photos WHERE project_id = 1 AND item_id = ? ORDER BY id").bind(itemId)
-    : bindings().DB.prepare("SELECT id, item_id, created_at FROM photos WHERE project_id = 1 ORDER BY item_id, id");
-  const result = await query.all();
-  return Response.json({ photos: result.results.map((row) => metadata(row as Record<string, unknown>)) });
+  let query = supabase
+    .from("photos")
+    .select("id, item_id, created_at")
+    .eq("user_id", user.id)
+    .order("id", { ascending: true });
+
+  if (itemId) query = query.eq("item_id", itemId);
+
+  const { data, error } = await query;
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ photos: (data ?? []).map(metadata) });
 }
 
 export async function POST(request: Request) {
-  await ready();
+  const auth = await requireUser();
+  if (auth.error) return auth.error;
+  const { supabase, user } = auth;
+
   const form = await request.formData();
-  const file = form.get("file"); const itemId = Number(form.get("itemId"));
-  if (!(file instanceof File) || !itemId) return Response.json({ error: "Photo and item are required" }, { status: 400 });
-  if (!file.type.startsWith("image/") || file.size > 15_000_000) return Response.json({ error: "Use an image smaller than 15 MB" }, { status: 400 });
-  const item = await bindings().DB.prepare("SELECT id FROM items WHERE id = ? AND project_id = 1").bind(itemId).first();
-  if (!item) return Response.json({ error: "Item not found" }, { status: 404 });
-  const extension = file.type === "image/png" ? "png" : "jpg";
-  const key = `project-1/items/${itemId}/${crypto.randomUUID()}.${extension}`;
-  await bindings().MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
-  const row = await bindings().DB.prepare("INSERT INTO photos (item_id, object_key) VALUES (?, ?) RETURNING id, item_id, created_at").bind(itemId, key).first();
-  return Response.json({ photo: metadata(row as Record<string, unknown>) }, { status: 201 });
+  const file = form.get("file");
+  const itemId = Number(form.get("itemId"));
+  if (!(file instanceof File) || !itemId) {
+    return NextResponse.json({ error: "Photo and item are required" }, { status: 400 });
+  }
+  if (!file.type.startsWith("image/") || file.size > 15_000_000) {
+    return NextResponse.json({ error: "Use an image smaller than 15 MB" }, { status: 400 });
+  }
+
+  const { data: item } = await supabase
+    .from("items")
+    .select("id")
+    .eq("id", itemId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!item) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+  const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `${user.id}/${itemId}/${crypto.randomUUID()}.${extension}`;
+  const buffer = await file.arrayBuffer();
+  const { error: uploadError } = await supabase.storage.from("punch-photos").upload(path, buffer, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
+
+  const { data, error } = await supabase
+    .from("photos")
+    .insert({
+      user_id: user.id,
+      item_id: itemId,
+      storage_path: path,
+    })
+    .select("id, item_id, created_at")
+    .single();
+
+  if (error) {
+    await supabase.storage.from("punch-photos").remove([path]);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ photo: metadata(data) }, { status: 201 });
 }

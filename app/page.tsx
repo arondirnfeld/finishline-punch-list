@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { downloadPunchListPdf } from "./report-pdf";
 
 type Theme = "notes" | "blueprint" | "ledger";
@@ -216,14 +217,23 @@ export default function Home() {
     await fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: value }) });
   }
 
+  async function signOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
+
   return (
     <main className={`site theme-${theme}`}>
       <div className="ambient-house" aria-hidden="true"><i className="roof" /><i className="wall" /><i className="door" /><i className="chimney" /></div>
       <header className="site-bar">
         <a className="wordmark" href="#top"><span className="mini-house">⌂</span> Punch House</a>
-        <div className="design-control">
-          <button className="design-button" onClick={() => setShowThemes(!showThemes)} aria-expanded={showThemes}><span className={`swatch ${theme}`} /> {currentTheme.label} <b>⌄</b></button>
-          {showThemes && <div className="theme-menu">{themes.map((entry) => <button key={entry.id} className={theme === entry.id ? "selected" : ""} onClick={() => chooseTheme(entry.id)}><span className={`theme-preview ${entry.id}`} /><span><b>{entry.label}</b><small>{entry.hint}</small></span>{theme === entry.id && <em>✓</em>}</button>)}</div>}
+        <div className="site-bar-actions">
+          <div className="design-control">
+            <button className="design-button" onClick={() => setShowThemes(!showThemes)} aria-expanded={showThemes}><span className={`swatch ${theme}`} /> {currentTheme.label} <b>⌄</b></button>
+            {showThemes && <div className="theme-menu">{themes.map((entry) => <button key={entry.id} className={theme === entry.id ? "selected" : ""} onClick={() => chooseTheme(entry.id)}><span className={`theme-preview ${entry.id}`} /><span><b>{entry.label}</b><small>{entry.hint}</small></span>{theme === entry.id && <em>✓</em>}</button>)}</div>}
+          </div>
+          <button type="button" className="sign-out-button" onClick={() => void signOut()}>Sign out</button>
         </div>
       </header>
 

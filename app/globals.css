@@ -66,3 +66,21 @@
 @media (min-width:701px) and (max-width:1100px){.list-heading,.list-row{grid-template-columns:44px 1fr 130px 52px 48px 64px}}
 @media(max-width:700px){.list-heading,.list-row{grid-template-columns:25px 1fr 58px 32px 30px 50px}.drag-line{font-size:14px}.row-edit{font-size:9px}}
 @media print{.action-col{display:none!important}.list-heading,.list-row{grid-template-columns:52px 1fr 150px 54px}}
+
+.site-bar-actions{display:flex;align-items:center;gap:10px}.sign-out-button{border:1px solid color-mix(in srgb,var(--ink) 18%,transparent);background:color-mix(in srgb,var(--paper) 78%,transparent);padding:8px 11px;border-radius:9px;font-size:11px;font-weight:700}
+.login-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:#d7d0c2;background-image:radial-gradient(#b6ac9d 1px,transparent 1px);background-size:20px 20px;font-family:var(--font-geist-sans),Arial,sans-serif;color:#26342e}
+.login-card{width:min(420px,100%);background:#fffdf6;border-radius:16px;padding:36px 28px;box-shadow:0 18px 50px #2d332b33;text-align:center}
+.login-mark{width:54px;height:54px;margin:0 auto 14px;border-radius:14px;display:grid;place-items:center;background:#227050;color:#fff;font-size:28px}
+.login-card h1{font-family:Georgia,serif;font-size:32px;margin:0 0 8px;font-weight:500}
+.login-card>p{margin:0 0 22px;color:#707b75;font-size:13px}
+.login-card form{display:grid;gap:12px;text-align:left}
+.login-card label{display:grid;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#707b75}
+.login-card input{border:1px solid #d6d9ce;border-radius:8px;padding:11px 12px;font:inherit;color:#26342e;text-transform:none;letter-spacing:0;font-weight:500}
+.login-card .solid,.google-button{border:0;border-radius:8px;padding:11px 14px;font-size:13px;font-weight:800;cursor:pointer}
+.login-card .solid{background:#227050;color:#fff;width:100%}
+.google-button{width:100%;background:#fff;border:1px solid #d6d9ce;color:#26342e;margin-bottom:8px}
+.login-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:#9aa29c;font-size:11px}
+.login-divider:before,.login-divider:after{content:"";flex:1;height:1px;background:#e2e5dc}
+.mode-toggle{border:0;background:transparent;color:#227050;font-size:12px;font-weight:700;margin-top:14px;cursor:pointer}
+.login-message{margin:14px 0 0;font-size:12px;color:#5b6a63}
+.login-card button:disabled{opacity:.5;cursor:default}
