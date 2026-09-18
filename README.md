@@ -6,6 +6,12 @@ A simple, paper-inspired house punch list on **Next.js + Vercel**, with data in 
 - Each user has their own rooms, items, photos, and address
 - Photos stored in Supabase Storage (`punch-photos`)
 
+## Live
+
+- **App:** https://punch-house.vercel.app
+- **Vercel team:** `orches-chaim` / project `punch-house`
+- **Supabase:** org `aron-innovations`, project `punch-house` (`btebuqpblnkoxnslfhvb`)
+
 ## Run locally
 
 ```bash
@@ -15,17 +21,20 @@ npm run dev
 
 Open http://localhost:3000/
 
-Requires `.env.local`:
+Requires `.env.local` with:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_URL=https://btebuqpblnkoxnslfhvb.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
 
-## Google auth
+## Auth setup (required once)
 
-In the Supabase dashboard → Authentication → Providers → Google, add your Google OAuth Client ID and Secret. Redirect URI:
+In Supabase → Authentication → URL Configuration:
 
-`https://<your-project-ref>.supabase.co/auth/v1/callback`
+- **Site URL:** `https://punch-house.vercel.app`
+- **Redirect URLs:** `https://punch-house.vercel.app/auth/callback`, `http://localhost:3000/auth/callback`
 
-Also add your app URLs under Authentication → URL Configuration (Site URL + Redirect URLs), e.g. `http://localhost:3000` and your Vercel domain.
+For Google: Authentication → Providers → Google, add Client ID/Secret. Callback:
+
+`https://btebuqpblnkoxnslfhvb.supabase.co/auth/v1/callback`

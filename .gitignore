@@ -33,6 +33,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+/_vercel*.json
+/_deploy*.json
+/_call*.json
 
 # typescript
 next-env.d.ts
